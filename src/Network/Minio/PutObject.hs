@@ -23,6 +23,7 @@ where
 
 import Conduit (takeC)
 import qualified Conduit as C
+import UnliftIO (bracketOnError)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Conduit.Binary as CB
 import qualified Data.Conduit.Combinators as CC
@@ -144,23 +145,27 @@ sequentialMultipartUpload ::
   Maybe Int64 ->
   C.ConduitM () ByteString Minio () ->
   Minio ETag
-sequentialMultipartUpload b o opts sizeMay src = do
-  -- get a new upload id.
-  uploadId <- newMultipartUpload b o (pooToHeaders opts)
+sequentialMultipartUpload b o opts sizeMay src =
+  bracketOnError
+    -- get a new upload id.
+    (newMultipartUpload b o $ pooToHeaders opts)
+    -- abort upload on Exception.
+    (abortMultipartUpload b o)
+    -- upload parts in loop
+    $ \uploadId -> do
+      let partSizes = selectPartSizes $ maybe maxObjectSize identity sizeMay
+          (pnums, _, sizes) = List.unzip3 partSizes
 
-  -- upload parts in loop
-  let partSizes = selectPartSizes $ maybe maxObjectSize identity sizeMay
-      (pnums, _, sizes) = List.unzip3 partSizes
-  uploadedParts <-
-    C.runConduit $
-      src
-        C..| chunkBSConduit (map fromIntegral sizes)
-        C..| CL.map PayloadBS
-        C..| uploadPart' uploadId pnums
-        C..| CC.sinkList
+      uploadedParts <-
+        C.runConduit $
+          src
+            C..| chunkBSConduit (map fromIntegral sizes)
+            C..| CL.map PayloadBS
+            C..| uploadPart' uploadId pnums
+            C..| CC.sinkList
 
-  -- complete multipart upload
-  completeMultipartUpload b o uploadId uploadedParts
+      -- complete multipart upload
+      completeMultipartUpload b o uploadId uploadedParts
   where
     uploadPart' _ [] = return ()
     uploadPart' uid (pn : pns) = do
