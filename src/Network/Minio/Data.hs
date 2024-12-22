@@ -35,6 +35,7 @@ import qualified Data.Aeson as A
 import qualified Data.ByteArray as BA
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LB
+import Data.Default
 import qualified Data.HashMap.Strict as H
 import qualified Data.Ini as Ini
 import qualified Data.List as List
@@ -42,7 +43,6 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Time (defaultTimeLocale, formatTime)
 import Lib.Prelude (UTCTime, throwIO)
-import qualified Network.Connection as Conn
 import Network.HTTP.Client (defaultManagerSettings)
 import qualified Network.HTTP.Client.TLS as TLS
 import qualified Network.HTTP.Conduit as NC
@@ -1115,8 +1115,7 @@ connect :: ConnectInfo -> IO MinioConn
 connect ci = do
   let settings
         | connectIsSecure ci && connectDisableTLSCertValidation ci =
-            let badTlsSettings = Conn.TLSSettingsSimple True False False
-             in TLS.mkManagerSettings badTlsSettings Nothing
+          TLS.mkManagerSettings def Nothing
         | connectIsSecure ci = NC.tlsManagerSettings
         | otherwise = defaultManagerSettings
   mgr <- NC.newManager settings
